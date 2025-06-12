@@ -24,35 +24,41 @@ resource "aws_instance" "minecraft_server" {
   tags = {
     Name = var.instance_name
   }
-}
 
-resource "null_resource" "configure_minecraft_with_ansible" {
-  depends_on = [aws_instance.minecraft_server]
+  provisioner "file" {
+    source      = "setup_minecraft.sh"          # Path to your local script file
+    destination = "/tmp/setup_minecraft.sh"     # Path where the script will be copied on the EC2 instance
 
-  triggers = {
-    instance_id = aws_instance.minecraft_server.id
+    # Connection details for SSH. Terraform handles this natively.
+    connection {
+      type        = "ssh"
+      user        = "ec2-user" # Default user for Amazon Linux AMIs
+      private_key = file("C:/Users/sirti/.ssh/minecraft_server") # Path to your LOCAL private key
+      host        = self.public_ip # The public IP of the newly created instance
+      timeout     = "5m" # Increase timeout if provisioning takes a while
+   }
   }
+  
+  provisioner "remote-exec" {
+    # Commands to execute on the remote EC2 instance.
+    # Make the script executable, then run it with sudo.
+    inline = [
+      "chmod +x /tmp/setup_minecraft.sh", # Make the copied script executable
+      "sudo /tmp/setup_minecraft.sh",     # Execute the script as root
+    ]
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      until ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -i C:/Users/sirti/.ssh/minecraft_server \
-      ec2-user@${aws_instance.minecraft_server.public_ip} exit; \
-      do sleep 10; done
-    EOT
-    interpreter=["C:/Program Files/Git/bin/bash.exe", "-c"]
+    # Connection details for SSH (same as above).
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("C:/Users/sirti/.ssh/minecraft_server")
+      host        = self.public_ip
+      timeout     = "10m" # Allow more time for script execution
+    }
   }
+ }
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      ansible-playbook -i '${aws_instance.minecraft_server.public_ip},' \
-      --user ec2-user \
-      --private-key C:/Users/sirti/.ssh/minecraft_server \
-      minecraft_playbook.yml
-    EOT
-    interpreter=["C:/Program Files/Git/bin/bash.exe", "-c"]
-  }
-}
+
 
 resource "aws_key_pair" "minecraft_key" {
   key_name   = "minecraft_server" # This is the name AWS will use for your key pair
